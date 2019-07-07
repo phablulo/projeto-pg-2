@@ -2,10 +2,14 @@
 #include <opencv2/xfeatures2d.hpp>
 #include <iostream>
 #include <thread>
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include "shader.hpp"
 using namespace cv;
 using namespace std;
 using namespace cv::xfeatures2d;
-#define wname "image"
+using namespace glm;
 
 struct CalibrateResult {
   Mat intrinsic;
@@ -21,6 +25,7 @@ struct SharedResult {
   bool isReady;
   SharedResult(): isReady(false) {}
 };
+SharedResult sr;
 
 CalibrateResult calibrate(VideoCapture &cap) {
   int numBoards = 20;
@@ -51,7 +56,7 @@ CalibrateResult calibrate(VideoCapture &cap) {
       imagePoints.push_back(corners);
       objectPoints.push_back(obj);
     }
-    imshow(wname, image);
+    sr.image = image;
     if (waitKey(1) == 27) {
       exit(0);
     }
@@ -112,7 +117,7 @@ int track(VideoCapture &cap, Mat &source, CalibrateResult &cr) {
       image = draw;
     }
     
-    imshow(wname, image);
+    sr.image = image;
     if (waitKey(1) == 27) {
       break;
     }
@@ -134,7 +139,7 @@ int simpleVideo(VideoCapture &cap, CalibrateResult &cr) {
       cornerSubPix(imageGray, corners, Size(11, 11), Size(-1, -1), TermCriteria(TermCriteria::EPS | TermCriteria::MAX_ITER, 30, 0.1));
       drawChessboardCorners(image, boardSize, corners, found);
     }
-    imshow(wname, image);
+    sr.image = image;
     if (waitKey(1) == 27) {
       break;
     }
@@ -168,7 +173,7 @@ void drawObject(Mat &image, vector<Point2f> &corners, vector<Point2f> &ipoints) 
   // line(image, corner, ipoints[1], Scalar(0, 255, 0), 5);
   // line(image, corner, ipoints[2], Scalar(0, 0, 255), 5);
 }
-int poseEstimation(VideoCapture &cap, CalibrateResult &cr, SharedResult *sr) {
+int poseEstimation(VideoCapture &cap, CalibrateResult &cr) {
   Mat imagem;
   Mat image;
   Mat imageGray;
@@ -193,16 +198,15 @@ int poseEstimation(VideoCapture &cap, CalibrateResult &cr, SharedResult *sr) {
       projectPoints(axis, rvec, tvec, cr.intrinsic, cr.distCoeffs, ipoints);
       // desenha
       // repassa dados pro SharedResult:
-      sr->image = image;
-      sr->corners = corners;
-      sr->ipoints = ipoints;
-      sr->isReady = true;
+      sr.corners = corners;
+      sr.ipoints = ipoints;
+      sr.isReady = true;
       //drawObject(image, corners, ipoints);
     }
     else {
-      sr->isReady = false;
+      sr.isReady = false;
     }
-    imshow(wname, image);
+    sr.image = image;
     if (waitKey(1) == 27) {
       break;
     }
@@ -210,7 +214,7 @@ int poseEstimation(VideoCapture &cap, CalibrateResult &cr, SharedResult *sr) {
   return 0;
 }
 
-void opencv(SharedResult *sr) {
+void opencv() {
   VideoCapture cap(0);
   cap.set(CAP_PROP_FRAME_WIDTH, 640);
   cap.set(CAP_PROP_FRAME_HEIGHT, 480);
@@ -231,23 +235,140 @@ void opencv(SharedResult *sr) {
       track(cap, image, calibration);
     }
     else if (status == 2) {
-      poseEstimation(cap, calibration, sr);
+      poseEstimation(cap, calibration);
     }
     status = (status + 1) % 3;
   }
   cap.release();
   exit(0);
 }
-void opengl(SharedResult *sr) {
-  while (true) {
-    this_thread::sleep_for(chrono::seconds(1));
-    cout << "isReady? " << sr->isReady << endl;
+// void opengl() {
+//   glewExperimental = true; // Needed for core profile	
+//   if (!glfwInit()) {
+//     cout << "Erro ao iniciar GLFW" << endl;
+//     exit(1);
+//   }
+//   glfwWindowHint(GLFW_SAMPLES, 4); // 4x antialiasing
+//   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3); // We want OpenGL 3.3
+//   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+//   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); // We don't want the old OpenGL
+// 
+//   GLFWwindow* window;
+//   window = glfwCreateWindow(640, 480, "Projeto PG", NULL, NULL);
+//   if(window == NULL) {
+//     cout << "Erro ao abrir janela do GLFW" << endl;
+//     glfwTerminate();
+//     exit(1);
+//   }
+//   glfwMakeContextCurrent(window);
+//   glewExperimental=true; // Needed in core profile
+//   if (glewInit() != GLEW_OK) {
+//     cout << "Failed to initialize GLEW" << endl;
+//     exit(1);
+//   }
+// 
+// 	glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
+// 	GLuint textureID;
+// 	glGenTextures(1, &textureID);
+// 	// Bind to our texture handle
+// 	glBindTexture(GL_TEXTURE_2D, textureID);
+// 	GLenum inputColourFormat = GL_BGR;
+// 	
+// 	do {
+// 		glClear(GL_COLOR_BUFFER_BIT);
+// 		glMatrixMode(GL_MODELVIEW);
+// 		glEnable(GL_TEXTURE_2D);
+// 
+//     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, sr.image.cols , sr.image.rows, 0, inputColourFormat, GL_UNSIGNED_BYTE, sr.image.ptr());
+//     glUniform1i(textureID, 0);
+//     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+//     glFlush();
+// 	
+// 		glBegin(GL_QUADS);
+// 		glTexCoord2i(0, 0); glVertex2i(0,   0);
+// 		glTexCoord2i(0, 1); glVertex2i(0,   480);
+// 		glTexCoord2i(1, 1); glVertex2i(640, 480);
+// 		glTexCoord2i(1, 0); glVertex2i(640, 0);
+// 		glEnd();
+// 
+// 		glDeleteTextures(1, &textureID);
+//     glDisable(GL_TEXTURE_2D);
+// 
+//     //this_thread::sleep_for(chrono::seconds(1));
+//     cout << "isReady? " << sr.isReady << endl;
+// 		//imshow("name", sr.image);
+// 
+// 		glfwSwapBuffers(window);
+// 		glfwPollEvents();
+// 	}
+// 	while (glfwGetKey(window, GLFW_KEY_ESCAPE) != GLFW_PRESS && glfwWindowShouldClose(window) == 0);
+// }
+void opengl() {
+	glewExperimental = true; // Needed for core profile
+  if(!glfwInit()) {
+		cout << "Falha ao iniciar GLFW" << endl;
+    exit(1);
   }
+	glfwWindowHint(GLFW_SAMPLES, 4); // 4x antialiasing
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3); // We want OpenGL 3.3
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // To make MacOS happy; should not be needed
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); // We don't want the old OpenGL 
+	GLFWwindow* window; // (In the accompanying source code, this variable is global for simplicity)
+  window = glfwCreateWindow(649, 480, "Tutorial 01", NULL, NULL);
+	if (window == NULL) {
+		cout << "Falha ao abrir janela do GLFW" << endl;
+		exit(1);
+	}
+	glfwMakeContextCurrent(window);
+	glewExperimental = true;
+	if (glewInit() != GLEW_OK) {
+		cout << "Falha ao iniciar Glew" << endl;
+		exit(1);
+	}
+	glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
+	while (sr.image.empty()); // aguarda até ter imagem pra exibir
+	cout << "Já existe imagem pra exibir" << endl;
+	// cria objeto pra mostrar
+
+  GLuint programID = LoadShaders("vshader.glsl", "fshader.glsl"); // carrega shaders
+	GLuint VertexArrayID;
+	glGenVertexArrays(1, &VertexArrayID);
+	glBindVertexArray(VertexArrayID);
+
+	static const GLfloat g_vertex_buffer_data[] = {
+		-1.0f, -1.0f, 0.0f,
+		1.0f, -1.0f, 0.0f,
+		0.0f,  1.0f, 0.0f,
+	};
+	GLuint vertexbuffer;
+	glGenBuffers(1, &vertexbuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(g_vertex_buffer_data), g_vertex_buffer_data, GL_STATIC_DRAW);
+  GLuint textureID; // textura...
+  glGenTextures(1, &textureID);
+
+	// --- 
+	do {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		// ---
+		// desenhos acontecem aqui!
+    glUseProgram(programID); // use o shader
+		glEnableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+		glDrawArrays(GL_TRIANGLES, 0, 3);
+		glDisableVertexAttribArray(0);	
+
+		// ---
+		glfwSwapBuffers(window);
+		glfwPollEvents();
+	}
+	while (glfwGetKey(window, GLFW_KEY_ESCAPE ) != GLFW_PRESS && glfwWindowShouldClose(window) == 0);
 }
 
 int main(int argc, char* argv[]) {
-  SharedResult sr;
-  thread opencv_t(opencv, &sr);
-  opengl(&sr);
+  thread opencv_t(opencv);
+  opengl();
   return 0;
 }
