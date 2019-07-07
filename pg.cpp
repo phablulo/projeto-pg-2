@@ -1,6 +1,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/xfeatures2d.hpp>
 #include <iostream>
+#include <thread>
 using namespace cv;
 using namespace std;
 using namespace cv::xfeatures2d;
@@ -194,7 +195,7 @@ int poseEstimation(VideoCapture &cap, CalibrateResult &cr) {
   return 0;
 }
 
-int main(int argc, char* argv[]) {
+void opencv() {
   VideoCapture cap(0);
   cap.set(CAP_PROP_FRAME_WIDTH, 640);
   cap.set(CAP_PROP_FRAME_HEIGHT, 480);
@@ -210,18 +211,21 @@ int main(int argc, char* argv[]) {
       Mat image = imread("imagem.jpg", 1); // imagem base
       if (image.empty()) {
         cout << "impossível ler a imagem pro tracking" << endl;
-        return 1;
+        exit(1);
       }
       track(cap, image, calibration);
     }
     else if (status == 2) {
       poseEstimation(cap, calibration);
     }
-    else {
-      status = -1;
-    }
-    status += 1;
+    status = (status + 1) % 3;
   }
   cap.release();
+  exit(0);
+}
+
+int main(int argc, char* argv[]) {
+  thread opencv_t(opencv);
+  while (1) {};
   return 0;
 }
