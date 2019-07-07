@@ -133,6 +133,33 @@ int simpleVideo(VideoCapture &cap, CalibrateResult &cr) {
   }
   return 0;
 }
+void drawObject(Mat &image, vector<Point2f> &corners, vector<Point2f> &ipoints) {
+	vector<Point> floor;
+	vector<vector<Point>> contours;
+	
+	for (int i = 0; i < 4; ++i) {
+		floor.push_back(Point((double)ipoints[i].x, (double)ipoints[i].y));
+	}
+	contours.push_back(floor);
+  drawContours(image, contours, -1, Scalar(0, 255, 0), -3);
+	for (int i = 0; i < 4; ++i) {
+		int j = 4 + i;
+		line(image, ipoints[i], ipoints[j], Scalar(255, 0, 0), 3);
+	}
+	for (int i = 0; i < 4; ++i) {
+		int j = 4 + i;
+		floor[i] = Point((double)ipoints[j].x, (double)ipoints[j].y);
+	}
+	contours[0] = floor;
+  drawContours(image, contours, -1, Scalar(0, 0, 255), 3);
+	
+
+	// coordenadas:
+  // Point2f corner = corners[0];
+  // line(image, corner, ipoints[0], Scalar(255, 0, 0), 5);
+  // line(image, corner, ipoints[1], Scalar(0, 255, 0), 5);
+  // line(image, corner, ipoints[2], Scalar(0, 0, 255), 5);
+}
 int poseEstimation(VideoCapture &cap, CalibrateResult &cr) {
   Mat imagem;
   Mat image;
@@ -142,8 +169,8 @@ int poseEstimation(VideoCapture &cap, CalibrateResult &cr) {
   Mat rvec;
   Mat tvec;
   vector<Point2f> ipoints; 
-  float data[9] = {3,0,0, 0,3,0, 0,0,3};
-  Mat axis(3, 3, CV_32F, data);
+  float data[24] = {0,0,0, 0,5,0, 5,5,0, 5,0,0, 0,0,5, 0,5,5, 5,5,5, 5,0,5};
+  Mat axis(8, 3, CV_32F, data);
 
   while (true) {
     cap >> imagem;
@@ -157,10 +184,7 @@ int poseEstimation(VideoCapture &cap, CalibrateResult &cr) {
       // projeta-os no plano de imagem
       projectPoints(axis, rvec, tvec, cr.intrinsic, cr.distCoeffs, ipoints);
       // desenha
-      Point2f corner = corners[0];
-      line(image, corner, ipoints[0], Scalar(255, 0, 0), 5);
-      line(image, corner, ipoints[1], Scalar(0, 255, 0), 5);
-      line(image, corner, ipoints[2], Scalar(0, 0, 255), 5);
+      drawObject(image, corners, ipoints);
     }
     imshow(wname, image);
     if (waitKey(1) == 27) {
