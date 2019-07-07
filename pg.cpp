@@ -14,6 +14,13 @@ struct CalibrateResult {
   vector<Mat> rvecs;
   vector<Mat> tvecs;
 };
+struct SharedResult {
+  Mat image;
+  vector<Point2f> corners;
+  vector<Point2f> ipoints;
+  bool isReady;
+  SharedResult(): isReady(false) {}
+};
 
 CalibrateResult calibrate(VideoCapture &cap) {
   int numBoards = 20;
@@ -161,7 +168,7 @@ void drawObject(Mat &image, vector<Point2f> &corners, vector<Point2f> &ipoints) 
   // line(image, corner, ipoints[1], Scalar(0, 255, 0), 5);
   // line(image, corner, ipoints[2], Scalar(0, 0, 255), 5);
 }
-int poseEstimation(VideoCapture &cap, CalibrateResult &cr) {
+int poseEstimation(VideoCapture &cap, CalibrateResult &cr, SharedResult *sr) {
   Mat imagem;
   Mat image;
   Mat imageGray;
@@ -185,7 +192,15 @@ int poseEstimation(VideoCapture &cap, CalibrateResult &cr) {
       // projeta-os no plano de imagem
       projectPoints(axis, rvec, tvec, cr.intrinsic, cr.distCoeffs, ipoints);
       // desenha
-      drawObject(image, corners, ipoints);
+      // repassa dados pro SharedResult:
+      sr->image = image;
+      sr->corners = corners;
+      sr->ipoints = ipoints;
+      sr->isReady = true;
+      //drawObject(image, corners, ipoints);
+    }
+    else {
+      sr->isReady = false;
     }
     imshow(wname, image);
     if (waitKey(1) == 27) {
@@ -195,7 +210,7 @@ int poseEstimation(VideoCapture &cap, CalibrateResult &cr) {
   return 0;
 }
 
-void opencv() {
+void opencv(SharedResult *sr) {
   VideoCapture cap(0);
   cap.set(CAP_PROP_FRAME_WIDTH, 640);
   cap.set(CAP_PROP_FRAME_HEIGHT, 480);
@@ -216,16 +231,23 @@ void opencv() {
       track(cap, image, calibration);
     }
     else if (status == 2) {
-      poseEstimation(cap, calibration);
+      poseEstimation(cap, calibration, sr);
     }
     status = (status + 1) % 3;
   }
   cap.release();
   exit(0);
 }
+void opengl(SharedResult *sr) {
+  while (true) {
+    this_thread::sleep_for(chrono::seconds(1));
+    cout << "isReady? " << sr->isReady << endl;
+  }
+}
 
 int main(int argc, char* argv[]) {
-  thread opencv_t(opencv);
-  while (1) {};
+  SharedResult sr;
+  thread opencv_t(opencv, &sr);
+  opengl(&sr);
   return 0;
 }
