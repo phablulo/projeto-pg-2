@@ -9,6 +9,9 @@ using namespace cv::xfeatures2d;
 struct CalibrateResult {
   Mat intrinsic;
   Mat distCoeffs;
+  vector<Point3f> objectPoints;
+  vector<Mat> rvecs;
+  vector<Mat> tvecs;
 };
 
 CalibrateResult calibrate(VideoCapture &cap) {
@@ -57,6 +60,9 @@ CalibrateResult calibrate(VideoCapture &cap) {
   CalibrateResult cr;
   cr.intrinsic = intrinsic;
   cr.distCoeffs = distCoeffs;
+  cr.objectPoints = obj;
+  cr.rvecs = rvecs;
+  cr.tvecs = tvecs;
 
   return cr;
 }
@@ -127,6 +133,42 @@ int simpleVideo(VideoCapture &cap, CalibrateResult &cr) {
   }
   return 0;
 }
+int poseEstimation(VideoCapture &cap, CalibrateResult &cr) {
+  Mat imagem;
+  Mat image;
+  Mat imageGray;
+  Size boardSize = Size(7, 7);
+  vector<Point2f> corners;
+  Mat rvec;
+  Mat tvec;
+  vector<Point2f> ipoints; 
+  float data[9] = {3,0,0, 0,3,0, 0,0,3};
+  Mat axis(3, 3, CV_32F, data);
+
+  while (true) {
+    cap >> imagem;
+    undistort(imagem, image, cr.intrinsic, cr.distCoeffs);
+    cvtColor(image, imageGray, COLOR_BGR2GRAY);
+    bool found = findChessboardCorners(imageGray, boardSize, corners, CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FILTER_QUADS);
+    if (found) {
+      cornerSubPix(imageGray, corners, Size(11, 11), Size(-1, -1), TermCriteria(TermCriteria::EPS | TermCriteria::MAX_ITER, 30, 0.1));
+      // encontra os vetores de rotação e translação
+      solvePnPRansac(cr.objectPoints, corners, cr.intrinsic, cr.distCoeffs, rvec, tvec);
+      // projeta-os no plano de imagem
+      projectPoints(axis, rvec, tvec, cr.intrinsic, cr.distCoeffs, ipoints);
+      // desenha
+      Point2f corner = corners[0];
+      line(image, corner, ipoints[0], Scalar(255, 0, 0), 5);
+      line(image, corner, ipoints[1], Scalar(0, 255, 0), 5);
+      line(image, corner, ipoints[2], Scalar(0, 0, 255), 5);
+    }
+    imshow(wname, image);
+    if (waitKey(1) == 27) {
+      break;
+    }
+  }
+  return 0;
+}
 
 int main(int argc, char* argv[]) {
   VideoCapture cap(0);
@@ -147,6 +189,9 @@ int main(int argc, char* argv[]) {
         return 1;
       }
       track(cap, image, calibration);
+    }
+    else if (status == 2) {
+      poseEstimation(cap, calibration);
     }
     else {
       status = -1;
