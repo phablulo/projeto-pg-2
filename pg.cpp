@@ -1,3 +1,4 @@
+#define TINYOBJLOADER_IMPLEMENTATION
 #include <opencv2/opencv.hpp>
 #include <opencv2/xfeatures2d.hpp>
 #include <iostream>
@@ -6,10 +7,13 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include "texturer.hpp"
+#include "tiny_obj_loader.h"
+#include "shader.hpp"
 using namespace cv;
 using namespace std;
 using namespace cv::xfeatures2d;
 using namespace glm;
+using namespace tinyobj;
 
 struct CalibrateResult {
   Mat intrinsic;
@@ -249,16 +253,62 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
   }
 }
 /* fim */
+/* testes de obj */
+vector<vec3> process_obj() {
+  attrib_t attrib;
+	vector<shape_t> shapes;
+	vector<material_t> materials;
+ 	string warn;
+  string err;
+  string inputfile = "bunny.obj";
+	
+	bool ret = LoadObj(&attrib, &shapes, &materials, &warn, &err, inputfile.c_str());
+  if (!warn.empty()) cout << warn << std::endl;
+	if (!err.empty()) std::cerr << err << std::endl;
+	if (!ret) exit(1);
+
+  // vector<unsigned int > vertexIndices, uvIndices, normalIndices;
+  vector<vec3> vertices;
+  // vector<vec2> uvs;
+  // vector<vec3> normals;
+	
+	for (size_t s = 0; s < shapes.size(); ++s) {
+    size_t index_offset = 0;
+    for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); ++f) {
+      int fv = shapes[s].mesh.num_face_vertices[f];
+      for (size_t v = 0; v < fv; ++v) {
+        index_t idx = shapes[s].mesh.indices[index_offset + v];
+        real_t vx = attrib.vertices[3*idx.vertex_index+0];
+        real_t vy = attrib.vertices[3*idx.vertex_index+1];
+        real_t vz = attrib.vertices[3*idx.vertex_index+2];
+        vertices.push_back(vec3(vx, vy, vz));
+        // real_t nx = attrib.normals[3*idx.normal_index+0];
+        // real_t ny = attrib.normals[3*idx.normal_index+1];
+        // real_t nz = attrib.normals[3*idx.normal_index+2];
+        // real_t tx = attrib.texcoords[2*idx.texcoord_index+0];
+        // real_t ty = attrib.texcoords[2*idx.texcoord_index+1];
+        // -- cores
+        // real_t red = attrib.colors[3*idx.vertex_index+0];
+        // real_t green = attrib.colors[3*idx.vertex_index+1];
+        // real_t blue = attrib.colors[3*idx.vertex_index+2];
+      }
+      index_offset += fv;
+      //shapes[s].mesh.material_ids[f];
+    }   
+	}	
+  return vertices;
+}
+/* fim */
 void opengl() {
   if(!glfwInit()) {
 		cout << "Falha ao iniciar GLFW" << endl;
     exit(1);
   }
 	glfwWindowHint(GLFW_SAMPLES, 1); // 4x antialiasing
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 	GLFWwindow* window;
-  window = glfwCreateWindow(640, 480, "Tutorial 01", NULL, NULL);
+  window = glfwCreateWindow(640, 480, "Projeto PG", NULL, NULL);
 	if (window == NULL) {
 		cout << "Falha ao abrir janela do GLFW" << endl;
 		exit(1);
@@ -277,11 +327,23 @@ void opengl() {
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
   glOrtho(0.0, 640, 480, 0.0, 0.0, 100.0);
-  // textura...
+  // textura do opencv (a imagem da càmera)
   GLuint textureID; 
+	GLuint programID = LoadShaders("vshader.glsl", "fshader.glsl");
+  vector<vec3> vertices = process_obj();
+	GLuint vertexbuffer;
+  // Generate 1 buffer, put the resulting identifier in vertexbuffer
+  glGenBuffers(1, &vertexbuffer);
+  // The following commands will talk about our 'vertexbuffer' buffer
+  glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+	// Give our vertices to OpenGL.
+  //glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vec3), &vertices[0], GL_STATIC_DRAW);
  
+  cout << "olha o size " << vertices.size() << endl;
 	do {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glUseProgram(programID);
     glMatrixMode(GL_MODELVIEW);
     glEnable(GL_TEXTURE_2D);
     textureID = matToTexture(sr.image, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR, GL_CLAMP);
@@ -296,6 +358,29 @@ void opengl() {
     glDeleteTextures(1, &textureID);
     glDisable(GL_TEXTURE_2D);
 
+		glLoadIdentity();
+		glPushMatrix();
+		glScalef(10, 10, 10);
+		glTranslatef(0, 0, 20);
+
+		glEnableVertexAttribArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+    glVertexAttribPointer(
+				0,                  // attribute 0. No particular reason for 0, but must match the layout in the shader.
+				3,                  // size
+				GL_FLOAT,           // type
+				GL_FALSE,           // normalized?
+				0,                  // stride
+				(void*)0            // array buffer offset
+		);
+		glDrawArrays(GL_TRIANGLES, 0, 3000); // Starting from vertex 0; 3 vertices total -> 1 triangle
+    glDisableVertexAttribArray(0);
+		glPopMatrix();
+		glFlush();
+	
+
+    //glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vec3), &vertices[0], GL_STATIC_DRAW);
+
     if (sr.isReady) {
       cout << "Devo mostrar o objeto 3D!" << endl;
     }
@@ -304,7 +389,7 @@ void opengl() {
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	}
-	while (glfwGetKey(window, GLFW_KEY_ESCAPE ) != GLFW_PRESS && glfwWindowShouldClose(window) == 0);
+	while (glfwGetKey(window, GLFW_KEY_ESCAPE) != GLFW_PRESS && glfwWindowShouldClose(window) == 0);
 }
 
 int main(int argc, char* argv[]) {
